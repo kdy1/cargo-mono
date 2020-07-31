@@ -28,7 +28,6 @@ pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
     // Get list of crates to bump
     let mut dependants = Default::default();
     public_dependants(&mut dependants, &ws_packages, &crate_to_bump, breaking).await?;
-    dbg!(&dependants);
     let dependants = Arc::new(dependants);
 
     patch(main.clone(), dependants.clone())
@@ -110,11 +109,11 @@ fn public_dependants<'a>(
 
     async move {
         for p in packages {
-            // Skip if publish is false
-            match &p.publish {
-                Some(v) if v.is_empty() => continue,
-                _ => {}
+            if !can_publish(&p) {
+                continue;
             }
+
+            dbg!(&p.dependencies);
 
             if dependants.contains_key(&p.name) {
                 continue;
@@ -163,4 +162,20 @@ fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
     }
 
     Ok(v)
+}
+
+fn can_publish(p: &Package) -> bool {
+    // Skip if publish is false
+    match &p.publish {
+        Some(v) if v.is_empty() => return false,
+        _ => {}
+    }
+
+    for d in &p.dependencies {
+        if d.req.to_string() == "*" {
+            return false;
+        }
+    }
+
+    true
 }
