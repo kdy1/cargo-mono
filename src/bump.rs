@@ -4,39 +4,42 @@ use anyhow::bail;
 use anyhow::{Context, Result};
 use cargo_metadata::Package;
 use clap::ArgMatches;
+use futures_util::future::future::FutureExt;
 use semver::Version;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::{read_to_string, write};
+use std::sync::Arc;
 use tokio::task::spawn_blocking;
 
 pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
-    let packages = fetch_ws_crates().await?;
+    let ws_packages = fetch_ws_crates().await?;
 
     let crate_to_bump = matches
         .value_of_lossy("crate")
         .expect("crate name is required argument");
 
-    let main = match packages.iter().find(|p| p.name == crate_to_bump) {
+    let main = match ws_packages.iter().find(|p| p.name == crate_to_bump) {
         None => bail!("Package {} is not a member of workspace", crate_to_bump),
         Some(v) => v.clone(),
     };
 
     let breaking = matches.is_present("breaking");
 
-    patch(&main, breaking)
+    patch(main.clone(), Default::default())
         .await
         .with_context(|| format!("failed to patch {}", crate_to_bump))?;
 
     if breaking {
         // Get list of crates to bump
         let mut dependants = Default::default();
-        public_dependants(&mut dependants, &packages, &crate_to_bump);
+        public_dependants(&mut dependants, &ws_packages, &crate_to_bump, breaking);
+        let dependants = Arc::new(dependants);
 
-        for dep in &dependants {
-            match packages.iter().find(|p| p.name == &**dep) {
+        for dep in dependants.keys() {
+            match ws_packages.iter().find(|p| p.name == &**dep) {
                 None => bail!("Package {} is not a member of workspace", crate_to_bump),
                 Some(v) => {
-                    patch(v, breaking)
+                    patch(v.clone(), dependants.clone())
                         .await
                         .with_context(|| format!("failed to patch {}", v.name))?;
                 }
@@ -47,24 +50,36 @@ pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
     Ok(())
 }
 
-async fn patch(package: &Package, deps_to_bump: &[String], breaking: bool) -> Result<()> {
-    let previous = get_published_version(&package.name)
-        .await
-        .context("failed to get published version from crates.io")?;
-    let new_version = calc_bumped_version(previous.clone(), breaking)?;
+async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) -> Result<()> {
+    eprintln!(
+        "Package({}) -> {}",
+        package.name, deps_to_bump[&package.name]
+    );
 
-    eprintln!("Package({}): {} -> {}", package.name, previous, new_version);
-
-    spawn_blocking(|| -> Result<_> {
+    spawn_blocking(move || -> Result<_> {
         let toml = read_to_string(&package.manifest_path).context("failed to read error")?;
 
         let mut doc = toml
             .parse::<toml_edit::Document>()
             .context("toml file is invalid")?;
 
-        let v = new_version.to_string();
-        doc["package"]["version"] = toml_edit::value(&v);
-        let doc = doc.to_string();
+        // Bump version of package itself
+        let v = deps_to_bump[&package.name].to_string();
+        doc["package"]["version"] = toml_edit::value(&*v);
+
+        // Bump version of dependencies
+        let mut deps_section = &mut doc["dependencies"];
+        if !deps_section.is_none() {
+            //
+            let mut table = deps_section.as_inline_table_mut();
+            if let Some(table) = table {
+                for (dep_to_bump, new_version) in deps_to_bump.iter() {
+                    if table.contains_key(&dep_to_bump) {
+                        table[&dep_to_bump] = toml_edit::value(&*new_version.to_string());
+                    }
+                }
+            }
+        }
 
         write(&package.manifest_path, doc.to_string())
             .context("failed to save modified Cargo.toml")?;
@@ -76,10 +91,12 @@ async fn patch(package: &Package, deps_to_bump: &[String], breaking: bool) -> Re
 }
 
 /// This is recursive and returned value does not contain original crate itself.
-///
-/// **Note**:
-///  - Package is excluded if `publish` is [false].
-fn public_dependants(dependants: &mut HashSet<String>, packages: &[Package], crate_to_bump: &str) {
+async fn public_dependants(
+    dependants: &mut HashMap<String, Version>,
+    packages: &[Package],
+    crate_to_bump: &str,
+    breaking: bool,
+) -> Result<()> {
     for p in packages {
         // Skip if publish is false
         match &p.publish {
@@ -88,11 +105,17 @@ fn public_dependants(dependants: &mut HashSet<String>, packages: &[Package], cra
         }
 
         for p in packages {
-            if dependants.contains(&p.name) {
+            if dependants.contains_key(&p.name) {
                 continue;
             }
 
             if p.name == crate_to_bump {
+                let previous = get_published_version(&crate_to_bump)
+                    .await
+                    .context("failed to get published version from crates.io")?;
+                let new_version = calc_bumped_version(previous.clone(), breaking)?;
+
+                dependants.insert(p.name.clone(), new_version);
                 continue;
             }
 
@@ -100,12 +123,15 @@ fn public_dependants(dependants: &mut HashSet<String>, packages: &[Package], cra
                 if dep.name == crate_to_bump {
                     eprintln!("{} depends on {}", p.name, dep.name);
 
-                    dependants.insert(p.name.clone());
-                    public_dependants(dependants, packages, &p.name)
+                    public_dependants(dependants, packages, &p.name, breaking)
+                        .boxed()
+                        .await?;
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
