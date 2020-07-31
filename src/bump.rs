@@ -63,23 +63,21 @@ async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) ->
             .parse::<toml_edit::Document>()
             .context("toml file is invalid")?;
 
-        // Bump version of package itself
-        let v = deps_to_bump[&package.name].to_string();
-        doc["package"]["version"] = toml_edit::value(&*v);
+        {
+            // Bump version of package itself
+            let v = deps_to_bump[&package.name].to_string();
+            doc["package"]["version"] = toml_edit::value(&*v);
+        }
 
         // Bump version of dependencies
         let deps_section = &mut doc["dependencies"];
         if !deps_section.is_none() {
             //
-            let table = deps_section.as_inline_table_mut();
+            let table = deps_section.as_table_mut();
             if let Some(table) = table {
                 for (dep_to_bump, new_version) in deps_to_bump.iter() {
                     if table.contains_key(&dep_to_bump) {
-                        *table.get_mut(&**dep_to_bump).unwrap() =
-                            toml_edit::value(&*new_version.to_string())
-                                .as_value()
-                                .cloned()
-                                .unwrap();
+                        table[&dep_to_bump] = toml_edit::value(&*new_version.to_string());
                     }
                 }
             }
@@ -112,8 +110,6 @@ fn public_dependants<'a>(
             if !can_publish(&p) {
                 continue;
             }
-
-            dbg!(&p.dependencies);
 
             if dependants.contains_key(&p.name) {
                 continue;
