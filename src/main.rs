@@ -2,6 +2,7 @@ mod bump;
 mod check;
 mod info;
 mod publish;
+mod util;
 
 use anyhow::Context;
 use anyhow::Result;
