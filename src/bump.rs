@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::fs::{read_to_string, write};
 use std::sync::Arc;
 use tokio::task::spawn_blocking;
+use toml_edit::{Item, Value};
 
 pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
     let ws_packages = fetch_ws_crates().await?;
@@ -70,14 +71,45 @@ async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) ->
         }
 
         // Bump version of dependencies
-        let deps_section = &mut doc["dependencies"];
-        if !deps_section.is_none() {
-            //
-            let table = deps_section.as_table_mut();
-            if let Some(table) = table {
-                for (dep_to_bump, new_version) in deps_to_bump.iter() {
-                    if table.contains_key(&dep_to_bump) {
-                        table[&dep_to_bump] = toml_edit::value(&*new_version.to_string());
+        for &dep_type in &["dependencies", "dev-dependencies", "build-dependencies"] {
+            let deps_section = &mut doc[dep_type];
+            if !deps_section.is_none() {
+                //
+                let table = deps_section.as_table_mut();
+                if let Some(table) = table {
+                    for (dep_to_bump, new_version) in deps_to_bump.iter() {
+                        if table.contains_key(&dep_to_bump) {
+                            let prev: &mut toml_edit::Item = &mut table[dep_to_bump];
+
+                            let new_version = toml_edit::value(new_version.to_string());
+                            // We should handle object like
+                            //
+                            // { version = "0.1", path = "./macros" }
+
+                            match prev {
+                                Item::None => {
+                                    unreachable!("{}.{} cannot be none", dep_type, dep_to_bump,)
+                                }
+                                Item::Value(v) => match v {
+                                    Value::String(_) => {
+                                        *v = new_version.as_value().unwrap().clone()
+                                    }
+                                    Value::InlineTable(v) => {
+                                        *v.get_mut("version").expect("should have version") =
+                                            new_version.as_value().unwrap().clone();
+                                    }
+                                    _ => unreachable!(
+                                        "{}.{}: cannot be unknown type {:?}",
+                                        dep_type, dep_to_bump, prev
+                                    ),
+                                },
+                                Item::Table(_) => {}
+                                Item::ArrayOfTables(_) => unreachable!(
+                                    "{}.{} cannot be array of table",
+                                    dep_type, dep_to_bump
+                                ),
+                            }
+                        }
                     }
                 }
             }
