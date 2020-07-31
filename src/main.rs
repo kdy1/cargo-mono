@@ -7,13 +7,15 @@ mod util;
 use anyhow::Context;
 use anyhow::Result;
 use clap::{
-    app_from_crate, crate_authors, crate_description, crate_name, crate_version, AppSettings, Arg,
-    SubCommand,
+    crate_authors, crate_description, crate_name, crate_version, App, AppSettings, Arg, SubCommand,
 };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = app_from_crate!()
+    let matches = App::new(crate_name!())
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about(crate_description!())
         .subcommand(
             SubCommand::with_name("bump")
                 .about(
