@@ -1,5 +1,5 @@
 use crate::info::fetch_ws_crates;
-use crate::util::get_published_version;
+use crate::util::{can_publish, get_published_version};
 use anyhow::bail;
 use anyhow::{Context, Result};
 use cargo_metadata::Package;
@@ -190,20 +190,4 @@ fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
     }
 
     Ok(v)
-}
-
-fn can_publish(p: &Package) -> bool {
-    // Skip if publish is false
-    match &p.publish {
-        Some(v) if v.is_empty() => return false,
-        _ => {}
-    }
-
-    for d in &p.dependencies {
-        if d.req.to_string() == "*" {
-            return false;
-        }
-    }
-
-    true
 }

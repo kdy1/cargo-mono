@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use cargo_metadata::Package;
 use semver::Version;
 use std::time::Duration;
 
@@ -25,4 +26,20 @@ pub async fn get_published_version(name: &str) -> Result<Version> {
     let ver = versions.iter().max().cloned();
 
     Ok(ver.expect("version should exist"))
+}
+
+pub fn can_publish(p: &Package) -> bool {
+    // Skip if publish is false
+    match &p.publish {
+        Some(v) if v.is_empty() => return false,
+        _ => {}
+    }
+
+    for d in &p.dependencies {
+        if d.req.to_string() == "*" {
+            return false;
+        }
+    }
+
+    true
 }
