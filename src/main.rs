@@ -20,16 +20,12 @@ async fn main() -> Result<()> {
 The command ensures that the version is bumped compared to **the published version on crates.io**",
                 )
                 .arg(
-                    Arg::with_name("crates")
-                        .help(
-                            "Crates to bump version. You don't need to pass names of dependent \
-                             crates.",
-                        )
-                        .value_delimiter(",")
-                        .value_name("CRATES")
-                        .multiple(true)
+                    Arg::with_name("crate")
+                        .help("Name of the crate to bump version")
+                        .value_name("CRATE")
                         .required(true),
-                ),
+                )
+                .arg(Arg::with_name("breaking").help("Mark ").long("breaking")),
         )
         .subcommand(SubCommand::with_name("check").about("Verify that version is bumped"))
         .subcommand(SubCommand::with_name("publish").about("Publishes crates and its dependencies"))
