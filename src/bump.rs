@@ -6,6 +6,8 @@ use cargo_metadata::Package;
 use clap::ArgMatches;
 use semver::Version;
 use std::collections::HashSet;
+use std::fs::{read_to_string, write};
+use tokio::task::spawn_blocking;
 
 pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
     let packages = fetch_ws_crates().await?;
@@ -45,7 +47,7 @@ pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
     Ok(())
 }
 
-async fn patch(package: &Package, breaking: bool) -> Result<()> {
+async fn patch(package: &Package, deps_to_bump: &[String], breaking: bool) -> Result<()> {
     let previous = get_published_version(&package.name)
         .await
         .context("failed to get published version from crates.io")?;
@@ -53,7 +55,24 @@ async fn patch(package: &Package, breaking: bool) -> Result<()> {
 
     eprintln!("Package({}): {} -> {}", package.name, previous, new_version);
 
-    unimplemented!()
+    spawn_blocking(|| -> Result<_> {
+        let toml = read_to_string(&package.manifest_path).context("failed to read error")?;
+
+        let mut doc = toml
+            .parse::<toml_edit::Document>()
+            .context("toml file is invalid")?;
+
+        let v = new_version.to_string();
+        doc["package"]["version"] = toml_edit::value(&v);
+        let doc = doc.to_string();
+
+        write(&package.manifest_path, doc.to_string())
+            .context("failed to save modified Cargo.toml")?;
+
+        Ok(())
+    })
+    .await
+    .expect("failed to edit toml file")
 }
 
 /// This is recursive and returned value does not contain original crate itself.

@@ -18,4 +18,5 @@ crates_io_api = "0.6.1"
 cargo_metadata = "0.11.1"
 semver = "0.10"
 serde = { version = "1", features = ["derive"] }
+toml_edit = "0.2.0"
 tokio = { version = "0.2", features = ["rt-core", "macros", "blocking"] }
