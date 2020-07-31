@@ -42,14 +42,9 @@ fn public_dependants(dependants: &mut HashSet<String>, packages: &[Package], cra
                 continue;
             }
 
-            dbg!(crate_to_bump);
-            dbg!(&p.name);
-
             for dep in &p.dependencies {
-                dbg!(&dep.name);
-
                 if dep.name == crate_to_bump {
-                    println!("{} depends on {}", p.name, dep.name);
+                    eprintln!("{} depends on {}", p.name, dep.name);
 
                     dependants.insert(p.name.clone());
                     public_dependants(dependants, packages, &p.name)
