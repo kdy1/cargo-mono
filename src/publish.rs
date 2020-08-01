@@ -11,15 +11,29 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::spawn;
 
-pub async fn run<'a>(_matches: &ArgMatches<'a>) -> Result<()> {
+pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
     let ws_packages = fetch_ws_crates().await?;
     let ws_packages = ws_packages
         .into_iter()
         .filter(can_publish)
         .collect::<Vec<_>>();
 
-    // let allow_only_deps = matches.is_present("allow-only-deps");
-    let graph = dependency_graph(&ws_packages);
+    let target_crate = matches.value_of("crate").unwrap_or_default();
+    let allow_only_deps = matches.is_present("allow-only-deps");
+    let graph = dependency_graph(&ws_packages, &target_crate);
+
+    if !allow_only_deps {
+        let p = ws_packages.iter().find(|p| p.name == target_crate);
+        if let Some(p) = p {
+            let published_version = get_published_version(&p.name)
+                .await
+                .context("failed to determine if a crate should be published")?;
+
+            if published_version >= p.version {
+                bail!("version of `{}` is same as published version", p.name)
+            }
+        }
+    }
 
     let packages: Vec<&PackageId> = match toposort(&graph, None) {
         Ok(v) => v,
@@ -62,7 +76,6 @@ async fn publish(p: &Package) -> Result<()> {
         .arg("always")
         .arg("--manifest-path")
         .arg(&p.manifest_path)
-        .arg("--dry-run")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -88,7 +101,7 @@ async fn publish(p: &Package) -> Result<()> {
 }
 
 /// `packages` should contain only workspace members.
-fn dependency_graph(packages: &[Package]) -> DiGraphMap<&PackageId, usize> {
+fn dependency_graph<'a>(packages: &'a [Package], target: &str) -> DiGraphMap<&'a PackageId, usize> {
     let mut graph = DiGraphMap::new();
 
     for p in packages {
@@ -102,6 +115,10 @@ fn dependency_graph(packages: &[Package]) -> DiGraphMap<&PackageId, usize> {
                 let dep_node = graph.add_node(&dep_pkg.id);
 
                 graph.add_edge(dep_node, pkg_node, 1);
+            }
+
+            if p.name == target {
+                break;
             }
         }
         //
