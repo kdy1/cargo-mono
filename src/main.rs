@@ -9,10 +9,11 @@ use anyhow::Result;
 use clap::{
     crate_authors, crate_description, crate_name, crate_version, App, AppSettings, Arg, SubCommand,
 };
+use std::env;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = App::new(crate_name!())
+    let app = App::new(crate_name!())
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())
@@ -47,8 +48,17 @@ The command ensures that the version is bumped compared to **the published versi
                 ),
         )
         .global_setting(AppSettings::ArgRequiredElseHelp)
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .get_matches();
+        .setting(AppSettings::SubcommandRequiredElseHelp);
+
+    let matches = {
+        let mut args = env::args().collect::<Vec<_>>();
+
+        if env::var("CARGO").is_ok() {
+            args.remove(1);
+        };
+
+        app.get_matches_from(args)
+    };
 
     if let Some(sub) = matches.subcommand_matches("bump") {
         bump::run(sub).await.context("failed to bump version")?;
