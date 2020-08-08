@@ -6,10 +6,10 @@ use cargo_metadata::{Package, PackageId};
 use clap::ArgMatches;
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
-use std::process::Stdio;
+use std::{time::Duration, process::Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::spawn;
+use tokio::{time::delay_for, spawn};
 
 pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
     let ws_packages = fetch_ws_crates().await?;
@@ -68,6 +68,8 @@ async fn publish_if_possible(package: &Package) -> Result<()> {
 }
 
 async fn publish(p: &Package) -> Result<()> {
+    delay_for(Duration::new(5,0)).await;
+
     eprintln!("Publishing `{}`", p.name);
 
     let mut process: Child = Command::new("cargo")

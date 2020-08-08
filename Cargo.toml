@@ -1,7 +1,7 @@
 [package]
 name = "cargo-mono"
 description = "Cargo subcommand to manage mono repository"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["강동윤 <kdy1997.dev@gmail.com>"]
 license = "Apache-2.0/MIT"
 repository = "https://github.com/kdy1/cargo-mono.git"
@@ -18,4 +18,4 @@ petgraph = "0.5.1"
 semver = "0.10"
 serde = { version = "1", features = ["derive"] }
 toml_edit = "0.2.0"
-tokio = { version = "0.2", features = ["rt-core", "process", "macros", "blocking"] }
+tokio = { version = "0.2", features = ["rt-core", "process", "macros", "blocking", "time"] }
