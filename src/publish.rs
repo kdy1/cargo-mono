@@ -3,56 +3,69 @@ use crate::util::{can_publish, get_published_version};
 use anyhow::bail;
 use anyhow::{Context, Result};
 use cargo_metadata::{Package, PackageId};
-use clap::ArgMatches;
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
-use std::{time::Duration, process::Stdio};
+use std::{process::Stdio, time::Duration};
+use structopt::StructOpt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::{time::delay_for, spawn};
+use tokio::{spawn, time::delay_for};
 
-pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
-    let ws_packages = fetch_ws_crates().await?;
-    let ws_packages = ws_packages
-        .into_iter()
-        .filter(can_publish)
-        .collect::<Vec<_>>();
+/// Publishes crates and its dependencies.
+#[derive(Debug, StructOpt)]
+pub struct PublishCommand {
+    /// Name of the crate to publish.
+    #[structopt(name = "crate", default_value = "*")]
+    pub crate_name: String,
 
-    let target_crate = matches.value_of("crate").unwrap_or_default();
-    let allow_only_deps = matches.is_present("allow-only-deps");
-    let graph = dependency_graph(&ws_packages, &target_crate);
-
-    if !allow_only_deps {
-        let p = ws_packages.iter().find(|p| p.name == target_crate);
-        if let Some(p) = p {
-            let published_version = get_published_version(&p.name)
-                .await
-                .context("failed to determine if a crate should be published")?;
-
-            if published_version >= p.version {
-                bail!("version of `{}` is same as published version", p.name)
-            }
-        }
-    }
-
-    let packages: Vec<&PackageId> = match toposort(&graph, None) {
-        Ok(v) => v,
-        Err(e) => bail!("circular dependency detected: {:?}", e),
-    };
-
-    for p in packages {
-        let pkg = ws_packages.iter().find(|ws_pkg| ws_pkg.id == *p);
-
-        if let Some(pkg) = pkg {
-            publish_if_possible(pkg)
-                .await
-                .context("failed to publish")?;
-        }
-    }
-
-    Ok(())
+    /// Allow publishing only dependencies
+    #[structopt(long)]
+    pub allow_only_deps: bool,
 }
 
+impl PublishCommand {
+    pub async fn run(&self) -> Result<()> {
+        let ws_packages = fetch_ws_crates().await?;
+        let ws_packages = ws_packages
+            .into_iter()
+            .filter(can_publish)
+            .collect::<Vec<_>>();
+
+        let target_crate = &*self.crate_name;
+        let allow_only_deps = self.allow_only_deps;
+        let graph = dependency_graph(&ws_packages, &target_crate);
+
+        if !allow_only_deps {
+            let p = ws_packages.iter().find(|p| p.name == target_crate);
+            if let Some(p) = p {
+                let published_version = get_published_version(&p.name)
+                    .await
+                    .context("failed to determine if a crate should be published")?;
+
+                if published_version >= p.version {
+                    bail!("version of `{}` is same as published version", p.name)
+                }
+            }
+        }
+
+        let packages: Vec<&PackageId> = match toposort(&graph, None) {
+            Ok(v) => v,
+            Err(e) => bail!("circular dependency detected: {:?}", e),
+        };
+
+        for p in packages {
+            let pkg = ws_packages.iter().find(|ws_pkg| ws_pkg.id == *p);
+
+            if let Some(pkg) = pkg {
+                publish_if_possible(pkg)
+                    .await
+                    .context("failed to publish")?;
+            }
+        }
+
+        Ok(())
+    }
+}
 async fn publish_if_possible(package: &Package) -> Result<()> {
     eprintln!("Checking if `{}` should be published", package.name);
 
@@ -68,7 +81,7 @@ async fn publish_if_possible(package: &Package) -> Result<()> {
 }
 
 async fn publish(p: &Package) -> Result<()> {
-    delay_for(Duration::new(5,0)).await;
+    delay_for(Duration::new(5, 0)).await;
 
     eprintln!("Publishing `{}`", p.name);
 

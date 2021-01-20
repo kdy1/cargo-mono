@@ -3,52 +3,68 @@ use crate::util::{can_publish, get_published_version};
 use anyhow::bail;
 use anyhow::{Context, Result};
 use cargo_metadata::Package;
-use clap::ArgMatches;
 use futures_util::future::{BoxFuture, FutureExt};
 use semver::Version;
 use std::collections::HashMap;
 use std::fs::{read_to_string, write};
 use std::sync::Arc;
+use structopt::StructOpt;
 use tokio::task::spawn_blocking;
 use toml_edit::{Item, Value};
 
-pub async fn run<'a>(matches: &ArgMatches<'a>) -> Result<()> {
-    let ws_packages = fetch_ws_crates().await?;
+/// "Bump versions of a crate and dependant crates.
+///
+/// The command ensures that the version is bumped compared to **the published
+/// version on crates.io**,
 
-    let crate_to_bump = matches
-        .value_of_lossy("crate")
-        .expect("crate name is required argument");
+#[derive(Debug, StructOpt)]
+pub struct BumpCommand {
+    /// Name of the crate to bump version
+    #[structopt(name = "crate")]
+    pub crate_name: String,
 
-    let main = match ws_packages.iter().find(|p| p.name == crate_to_bump) {
-        None => bail!("Package {} is not a member of workspace", crate_to_bump),
-        Some(v) => v.clone(),
-    };
+    /// True if it's a breaking change.
+    #[structopt(long)]
+    pub breaking: bool,
+}
 
-    let breaking = matches.is_present("breaking");
+impl BumpCommand {
+    pub async fn run(&self) -> Result<()> {
+        let ws_packages = fetch_ws_crates().await?;
 
-    // Get list of crates to bump
-    let mut dependants = Default::default();
-    public_dependants(&mut dependants, &ws_packages, &crate_to_bump, breaking).await?;
-    let dependants = Arc::new(dependants);
+        let crate_to_bump = &*self.crate_name;
 
-    patch(main.clone(), dependants.clone())
-        .await
-        .with_context(|| format!("failed to patch {}", crate_to_bump))?;
+        let main = match ws_packages.iter().find(|p| p.name == crate_to_bump) {
+            None => bail!("Package {} is not a member of workspace", crate_to_bump),
+            Some(v) => v.clone(),
+        };
 
-    if breaking {
-        for dep in dependants.keys() {
-            match ws_packages.iter().find(|p| p.name == &**dep) {
-                None => bail!("Package {} is not a member of workspace", crate_to_bump),
-                Some(v) => {
-                    patch(v.clone(), dependants.clone())
-                        .await
-                        .with_context(|| format!("failed to patch {}", v.name))?;
-                }
-            };
+        let breaking = self.breaking;
+
+        // Get list of crates to bump
+        let mut dependants = Default::default();
+        public_dependants(&mut dependants, &ws_packages, &crate_to_bump, breaking).await?;
+        let dependants = Arc::new(dependants);
+
+        patch(main.clone(), dependants.clone())
+            .await
+            .with_context(|| format!("failed to patch {}", crate_to_bump))?;
+
+        if breaking {
+            for dep in dependants.keys() {
+                match ws_packages.iter().find(|p| p.name == &**dep) {
+                    None => bail!("Package {} is not a member of workspace", crate_to_bump),
+                    Some(v) => {
+                        patch(v.clone(), dependants.clone())
+                            .await
+                            .with_context(|| format!("failed to patch {}", v.name))?;
+                    }
+                };
+            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) -> Result<()> {
