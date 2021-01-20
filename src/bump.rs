@@ -26,6 +26,12 @@ pub struct BumpCommand {
     /// True if it's a breaking change.
     #[structopt(long)]
     pub breaking: bool,
+
+    /// Bump version of dependants and update requirements.
+    ///
+    /// Has effect only if `breaking` is false.
+    #[structopt(short = "D", long)]
+    pub with_dependants: bool,
 }
 
 impl BumpCommand {
@@ -39,18 +45,19 @@ impl BumpCommand {
             Some(v) => v.clone(),
         };
 
-        let breaking = self.breaking;
-
         // Get list of crates to bump
         let mut dependants = Default::default();
-        public_dependants(&mut dependants, &ws_packages, &crate_to_bump, breaking).await?;
+        public_dependants(
+            &mut dependants,
+            &ws_packages,
+            &crate_to_bump,
+            self.breaking,
+            self.with_dependants,
+        )
+        .await?;
         let dependants = Arc::new(dependants);
 
-        patch(main.clone(), dependants.clone())
-            .await
-            .with_context(|| format!("failed to patch {}", crate_to_bump))?;
-
-        if breaking {
+        if self.breaking || self.with_dependants {
             for dep in dependants.keys() {
                 match ws_packages.iter().find(|p| p.name == &**dep) {
                     None => bail!("Package {} is not a member of workspace", crate_to_bump),
@@ -61,6 +68,10 @@ impl BumpCommand {
                     }
                 };
             }
+        } else {
+            patch(main.clone(), dependants.clone())
+                .await
+                .with_context(|| format!("failed to patch {}", crate_to_bump))?;
         }
 
         Ok(())
@@ -146,6 +157,7 @@ fn public_dependants<'a>(
     packages: &'a [Package],
     crate_to_bump: &'a str,
     breaking: bool,
+    with_dependants: bool,
 ) -> BoxFuture<'a, Result<()>> {
     eprintln!("Calculating dependants of `{}`", crate_to_bump);
     // eprintln!(
@@ -173,12 +185,13 @@ fn public_dependants<'a>(
                 continue;
             }
 
-            if breaking {
+            if breaking || with_dependants {
                 for dep in &p.dependencies {
                     if dep.name == crate_to_bump {
                         eprintln!("{} depends on {}", p.name, dep.name);
 
-                        public_dependants(dependants, packages, &p.name, breaking).await?;
+                        public_dependants(dependants, packages, &p.name, breaking, with_dependants)
+                            .await?;
                     }
                 }
             }
