@@ -5,7 +5,7 @@ edition = "2018"
 license = "Apache-2.0/MIT"
 name = "cargo-mono"
 repository = "https://github.com/kdy1/cargo-mono.git"
-version = "0.1.2"
+version = "0.2.0"
 
 [dependencies]
 anyhow = "1"
@@ -16,5 +16,5 @@ petgraph = "0.5.1"
 semver = "0.10"
 serde = {version = "1", features = ["derive"]}
 structopt = "0.3"
-tokio = {version = "0.2", features = ["rt-core", "process", "macros", "blocking", "time"]}
+tokio = {version = "1", features = ["rt", "rt-multi-thread", "io-util", "process", "macros", "time"]}
 toml_edit = "0.2.0"

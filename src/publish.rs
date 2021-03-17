@@ -9,7 +9,7 @@ use std::{process::Stdio, time::Duration};
 use structopt::StructOpt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::{spawn, time::delay_for};
+use tokio::{spawn, time::sleep};
 
 /// Publishes crates and its dependencies.
 #[derive(Debug, StructOpt)]
@@ -81,7 +81,7 @@ async fn publish_if_possible(package: &Package) -> Result<()> {
 }
 
 async fn publish(p: &Package) -> Result<()> {
-    delay_for(Duration::new(5, 0)).await;
+    sleep(Duration::new(5, 0)).await;
 
     eprintln!("Publishing `{}`", p.name);
 
@@ -102,8 +102,11 @@ async fn publish(p: &Package) -> Result<()> {
 
     // Ensure the child process is spawned in the runtime so it can
     // make progress on its own while we await for any output.
-    spawn(async {
-        let status = process.await.expect("child process encountered an error");
+    spawn(async move {
+        let status = process
+            .wait()
+            .await
+            .expect("child process encountered an error");
 
         println!("child status was: {}", status);
     });
