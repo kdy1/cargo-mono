@@ -1,15 +1,15 @@
-mod bump;
-mod check;
-mod info;
-mod publish;
-mod util;
-
 use anyhow::Context;
 use anyhow::Result;
 use bump::BumpCommand;
 use publish::PublishCommand;
 use std::env;
 use structopt::StructOpt;
+
+mod bump;
+mod check;
+mod info;
+mod publish;
+mod util;
 
 #[derive(Debug, StructOpt)]
 #[structopt(author, about)]
