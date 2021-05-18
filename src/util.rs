@@ -1,4 +1,5 @@
 use anyhow::bail;
+use anyhow::Error;
 use anyhow::{Context, Result};
 use cargo_metadata::Package;
 use futures_util::future::join_all;
@@ -37,10 +38,25 @@ async fn fetch_published_version(name: &str) -> Result<Version> {
         crates_io_api::AsyncClient::new("cargo-mono (kdy1997.dev@gmail.com)", Duration::new(1, 0))
             .context("failed to create a client for crates.io")?;
 
-    let p = client
-        .get_crate(name)
-        .await
-        .with_context(|| format!("failed to get version of `{}` from crates.io", name))?;
+    let p = client.get_crate(name).await;
+    let p = match p {
+        Ok(v) => v,
+        Err(crates_io_api::Error::NotFound(..)) => {
+            return Ok(Version {
+                major: 0,
+                minor: 0,
+                patch: 0,
+                pre: Default::default(),
+                build: Default::default(),
+            })
+        }
+        Err(err) => {
+            return Err(Error::new(err).context(format!(
+                "failed to get version of `{}` from crates.io",
+                name
+            )));
+        }
+    };
 
     let versions: Vec<Version> = p
         .versions
