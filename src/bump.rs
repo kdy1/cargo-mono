@@ -1,5 +1,5 @@
 use crate::info::fetch_ws_crates;
-use crate::util::{can_publish, get_published_version};
+use crate::util::{can_publish, get_published_versions};
 use anyhow::bail;
 use anyhow::{Context, Result};
 use cargo_metadata::Package;
@@ -38,6 +38,9 @@ impl BumpCommand {
     pub async fn run(&self) -> Result<()> {
         let ws_packages = fetch_ws_crates().await?;
 
+        let crate_names = ws_packages.iter().map(|p| &*p.name).collect::<Vec<_>>();
+        let published_versions = get_published_versions(&crate_names).await?;
+
         let crate_to_bump = &*self.crate_name;
 
         let main = match ws_packages.iter().find(|p| p.name == crate_to_bump) {
@@ -49,6 +52,7 @@ impl BumpCommand {
         let mut dependants = Default::default();
         public_dependants(
             &mut dependants,
+            &published_versions,
             &ws_packages,
             &crate_to_bump,
             self.breaking,
@@ -154,6 +158,7 @@ async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) ->
 /// This is recursive and returned value does not contain original crate itself.
 fn public_dependants<'a>(
     dependants: &'a mut HashMap<String, Version>,
+    published_versions: &'a HashMap<String, Version>,
     packages: &'a [Package],
     crate_to_bump: &'a str,
     breaking: bool,
@@ -176,10 +181,8 @@ fn public_dependants<'a>(
             }
 
             if p.name == crate_to_bump {
-                let previous = get_published_version(&crate_to_bump)
-                    .await
-                    .context("failed to get published version from crates.io")?;
-                let new_version = calc_bumped_version(previous.clone(), breaking)?;
+                let previous = published_versions[&p.name].clone();
+                let new_version = calc_bumped_version(previous, breaking)?;
 
                 dependants.insert(p.name.clone(), new_version);
                 continue;
@@ -190,8 +193,15 @@ fn public_dependants<'a>(
                     if dep.name == crate_to_bump {
                         eprintln!("{} depends on {}", p.name, dep.name);
 
-                        public_dependants(dependants, packages, &p.name, breaking, with_dependants)
-                            .await?;
+                        public_dependants(
+                            dependants,
+                            published_versions,
+                            packages,
+                            &p.name,
+                            breaking,
+                            with_dependants,
+                        )
+                        .await?;
                     }
                 }
             }
