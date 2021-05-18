@@ -9,7 +9,7 @@ use std::time::Duration;
 pub async fn get_published_versions(names: &[&str]) -> Result<HashMap<String, Version>> {
     let mut futures = vec![];
     for &name in names {
-        futures.push(get_version(name));
+        futures.push(fetch_published_version(name));
     }
     let results = join_all(futures).await;
 
@@ -32,7 +32,7 @@ pub async fn get_published_versions(names: &[&str]) -> Result<HashMap<String, Ve
 }
 
 /// Fetches the current version from crates.io
-async fn get_version(name: &str) -> Result<Version> {
+async fn fetch_published_version(name: &str) -> Result<Version> {
     let client =
         crates_io_api::AsyncClient::new("cargo-mono (kdy1997.dev@gmail.com)", Duration::new(1, 0))
             .context("failed to create a client for crates.io")?;
