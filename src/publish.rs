@@ -1,10 +1,13 @@
 use crate::info::fetch_ws_crates;
-use crate::util::{can_publish, get_published_version};
+use crate::util::can_publish;
+use crate::util::get_published_versions;
 use anyhow::bail;
 use anyhow::{Context, Result};
 use cargo_metadata::{Package, PackageId};
 use petgraph::algo::toposort;
 use petgraph::graphmap::DiGraphMap;
+use semver::Version;
+use std::collections::HashMap;
 use std::{process::Stdio, time::Duration};
 use structopt::StructOpt;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -31,6 +34,10 @@ impl PublishCommand {
             .filter(can_publish)
             .collect::<Vec<_>>();
 
+        let crate_names = ws_packages.iter().map(|s| &*s.name).collect::<Vec<_>>();
+
+        let published_versions = get_published_versions(&crate_names).await?;
+
         let target_crate = &*self.crate_name;
         let allow_only_deps = self.allow_only_deps;
         let graph = dependency_graph(&ws_packages, &target_crate);
@@ -38,9 +45,7 @@ impl PublishCommand {
         if !allow_only_deps {
             let p = ws_packages.iter().find(|p| p.name == target_crate);
             if let Some(p) = p {
-                let published_version = get_published_version(&p.name)
-                    .await
-                    .context("failed to determine if a crate should be published")?;
+                let published_version = published_versions[&p.name].clone();
 
                 if published_version >= p.version {
                     bail!("version of `{}` is same as published version", p.name)
@@ -57,7 +62,7 @@ impl PublishCommand {
             let pkg = ws_packages.iter().find(|ws_pkg| ws_pkg.id == *p);
 
             if let Some(pkg) = pkg {
-                publish_if_possible(pkg)
+                publish_if_possible(pkg, &published_versions)
                     .await
                     .context("failed to publish")?;
             }
@@ -66,14 +71,15 @@ impl PublishCommand {
         Ok(())
     }
 }
-async fn publish_if_possible(package: &Package) -> Result<()> {
+async fn publish_if_possible(
+    package: &Package,
+    published_versions: &HashMap<String, Version>,
+) -> Result<()> {
     eprintln!("Checking if `{}` should be published", package.name);
 
-    let published_version = get_published_version(&package.name)
-        .await
-        .context("failed to determine if a crate should be published")?;
+    let published_version = &published_versions[&package.name];
 
-    if published_version < package.version {
+    if *published_version < package.version {
         publish(package).await.context("failed to publish")?;
     }
 
