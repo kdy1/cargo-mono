@@ -1,10 +1,38 @@
+use anyhow::bail;
 use anyhow::{Context, Result};
 use cargo_metadata::Package;
+use futures_util::future::join_all;
 use semver::Version;
+use std::collections::HashMap;
 use std::time::Duration;
 
+pub async fn get_published_versions(names: &[&str]) -> Result<HashMap<String, Version>> {
+    let mut futures = vec![];
+    for &name in names {
+        futures.push(get_version(name));
+    }
+    let results = join_all(futures).await;
+
+    if results.iter().any(|res| res.is_err()) {
+        let errors: String = results
+            .into_iter()
+            .filter_map(Result::err)
+            .map(|err| format!("{:?}", err))
+            .collect();
+
+        bail!("failed to get version of crates: \n{}", errors);
+    }
+
+    Ok(results
+        .into_iter()
+        .map(Result::unwrap)
+        .enumerate()
+        .map(|(idx, v)| (names[idx].to_string(), v))
+        .collect())
+}
+
 /// Fetches the current version from crates.io
-pub async fn get_published_version(name: &str) -> Result<Version> {
+async fn get_version(name: &str) -> Result<Version> {
     let client =
         crates_io_api::AsyncClient::new("cargo-mono (kdy1997.dev@gmail.com)", Duration::new(1, 0))
             .context("failed to create a client for crates.io")?;
