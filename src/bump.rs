@@ -12,6 +12,7 @@ use structopt::StructOpt;
 use tokio::process::Command;
 use tokio::task::spawn_blocking;
 use toml_edit::{Item, Value};
+use walkdir::WalkDir;
 
 /// "Bump versions of a crate and dependant crates.
 ///
@@ -33,6 +34,10 @@ pub struct BumpCommand {
     /// Has effect only if `breaking` is false.
     #[structopt(short = "D", long)]
     pub with_dependants: bool,
+
+    /// Commit with the messahe `Bump version`.
+    #[structopt(short = "g", long)]
+    pub git: bool,
 }
 
 impl BumpCommand {
@@ -82,6 +87,10 @@ impl BumpCommand {
         generate_lockfile()
             .await
             .context("failed to update `Cargo.lock`")?;
+
+        if self.git {
+            git_commit().await.context("failed to commit using git")?;
+        }
 
         Ok(())
     }
@@ -242,6 +251,34 @@ async fn generate_lockfile() -> Result<()> {
         .status()
         .await
         .context("failed to generate lockfile")?;
+
+    Ok(())
+}
+
+async fn git_commit() -> Result<()> {
+    let mut files = vec![];
+    for e in WalkDir::new(".") {
+        let e = e?;
+
+        if e.path().is_file() {
+            if let Some(name) = e.path().file_name() {
+                if name == "Cargo.lock" || name == "Cargo.toml" {
+                    files.push(e.path().to_path_buf());
+                }
+            }
+        }
+    }
+
+    let mut cmd = Command::new("git");
+    cmd.arg("commit");
+
+    for file in &*files {
+        cmd.arg(file);
+    }
+
+    cmd.arg("-m").arg("Bump version");
+
+    cmd.status().await.context("failed to run git")?;
 
     Ok(())
 }
