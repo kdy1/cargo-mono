@@ -1,5 +1,4 @@
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bump::BumpCommand;
 use publish::PublishCommand;
 use std::env;

@@ -1,5 +1,4 @@
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use cargo_metadata::Package;
 use tokio::task::spawn_blocking;
 
