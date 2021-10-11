@@ -1,16 +1,19 @@
-use crate::info::fetch_ws_crates;
-use crate::util::{can_publish, get_published_versions};
-use anyhow::bail;
-use anyhow::{Context, Result};
+use crate::{
+    info::fetch_ws_crates,
+    util::{can_publish, get_published_versions},
+};
+use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
 use futures_util::future::{BoxFuture, FutureExt};
 use semver::Version;
-use std::collections::HashMap;
-use std::fs::{read_to_string, write};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    fs::{read_to_string, write},
+    path::Path,
+    sync::Arc,
+};
 use structopt::StructOpt;
-use tokio::process::Command;
-use tokio::task::spawn_blocking;
+use tokio::{process::Command, task::spawn_blocking};
 use toml_edit::{Item, Value};
 use walkdir::WalkDir;
 
@@ -273,7 +276,9 @@ async fn git_commit() -> Result<()> {
     cmd.arg("commit");
 
     for file in &*files {
-        cmd.arg(file);
+        if !is_ignored_by_git(&file).await? {
+            cmd.arg(file);
+        }
     }
 
     cmd.arg("-m").arg("Bump version");
@@ -281,4 +286,14 @@ async fn git_commit() -> Result<()> {
     cmd.status().await.context("failed to run git")?;
 
     Ok(())
+}
+
+async fn is_ignored_by_git(path: &Path) -> Result<bool> {
+    Command::new("git")
+        .arg("check-ignore")
+        .arg(path)
+        .output()
+        .await
+        .map(|output| output.status.success())
+        .context("failed to run git")
 }
