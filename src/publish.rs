@@ -24,6 +24,10 @@ pub struct PublishCommand {
     /// Allow publishing only dependencies
     #[structopt(long)]
     pub allow_only_deps: bool,
+
+    /// Skip verification.
+    #[structopt(long)]
+    pub no_veirfy: bool,
 }
 
 impl PublishCommand {
@@ -62,9 +66,15 @@ impl PublishCommand {
             let pkg = ws_packages.iter().find(|ws_pkg| ws_pkg.id == *p);
 
             if let Some(pkg) = pkg {
-                publish_if_possible(pkg, &published_versions)
-                    .await
-                    .context("failed to publish")?;
+                publish_if_possible(
+                    pkg,
+                    &published_versions,
+                    PublishOpts {
+                        no_verify: self.no_veirfy,
+                    },
+                )
+                .await
+                .context("failed to publish")?;
             }
         }
 
@@ -74,25 +84,38 @@ impl PublishCommand {
 async fn publish_if_possible(
     package: &Package,
     published_versions: &HashMap<String, Version>,
+    opts: PublishOpts,
 ) -> Result<()> {
     eprintln!("Checking if `{}` should be published", package.name);
 
     let published_version = &published_versions[&package.name];
 
     if *published_version < package.version {
-        publish(package).await.context("failed to publish")?;
+        publish(package, opts).await.context("failed to publish")?;
     }
 
     Ok(())
 }
 
-async fn publish(p: &Package) -> Result<()> {
+#[derive(Debug, Clone, Copy)]
+
+struct PublishOpts {
+    no_verify: bool,
+}
+
+async fn publish(p: &Package, opts: PublishOpts) -> Result<()> {
     sleep(Duration::new(5, 0)).await;
 
     eprintln!("Publishing `{}`", p.name);
 
-    let mut process: Child = Command::new("cargo")
-        .arg("publish")
+    let mut cmd = Command::new("cargo");
+
+    cmd.arg("publish");
+    if opts.no_verify {
+        cmd.arg("--no-verify");
+    }
+
+    let mut process: Child = cmd
         .arg("--color")
         .arg("always")
         .arg("--manifest-path")
