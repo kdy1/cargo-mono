@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::fs::{read_to_string, write};
 use std::sync::Arc;
 use structopt::StructOpt;
+use tokio::process::Command;
 use tokio::task::spawn_blocking;
 use toml_edit::{Item, Value};
 
@@ -77,6 +78,10 @@ impl BumpCommand {
                 .await
                 .with_context(|| format!("failed to patch {}", crate_to_bump))?;
         }
+
+        generate_lockfile()
+            .await
+            .context("failed to update `Cargo.lock`")?;
 
         Ok(())
     }
@@ -229,4 +234,14 @@ fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
     }
 
     Ok(v)
+}
+
+async fn generate_lockfile() -> Result<()> {
+    Command::new("cargo")
+        .arg("generate-lockfile")
+        .status()
+        .await
+        .context("failed to generate lockfile")?;
+
+    Ok(())
 }
