@@ -28,7 +28,7 @@ pub struct PublishCommand {
 
     /// Skip verification.
     #[structopt(long)]
-    pub no_veirfy: bool,
+    pub no_verify: bool,
 }
 
 impl PublishCommand {
@@ -71,7 +71,7 @@ impl PublishCommand {
                     pkg,
                     &published_versions,
                     PublishOpts {
-                        no_verify: self.no_veirfy,
+                        no_verify: self.no_verify,
                     },
                 )
                 .await
