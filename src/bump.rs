@@ -1,16 +1,21 @@
-use crate::info::fetch_ws_crates;
-use crate::util::{can_publish, get_published_versions};
-use anyhow::bail;
-use anyhow::{Context, Result};
+use crate::{
+    info::fetch_ws_crates,
+    util::{can_publish, get_published_versions},
+};
+use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
 use futures_util::future::{BoxFuture, FutureExt};
 use semver::Version;
-use std::collections::HashMap;
-use std::fs::{read_to_string, write};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    fs::{read_to_string, write},
+    path::Path,
+    sync::Arc,
+};
 use structopt::StructOpt;
-use tokio::task::spawn_blocking;
+use tokio::{process::Command, task::spawn_blocking};
 use toml_edit::{Item, Value};
+use walkdir::WalkDir;
 
 /// "Bump versions of a crate and dependant crates.
 ///
@@ -32,6 +37,10 @@ pub struct BumpCommand {
     /// Has effect only if `breaking` is false.
     #[structopt(short = "D", long)]
     pub with_dependants: bool,
+
+    /// Commit with the messahe `Bump version`.
+    #[structopt(short = "g", long)]
+    pub git: bool,
 }
 
 impl BumpCommand {
@@ -76,6 +85,14 @@ impl BumpCommand {
             patch(main.clone(), dependants.clone())
                 .await
                 .with_context(|| format!("failed to patch {}", crate_to_bump))?;
+        }
+
+        generate_lockfile()
+            .await
+            .context("failed to update `Cargo.lock`")?;
+
+        if self.git {
+            git_commit().await.context("failed to commit using git")?;
         }
 
         Ok(())
@@ -229,4 +246,54 @@ fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
     }
 
     Ok(v)
+}
+
+async fn generate_lockfile() -> Result<()> {
+    Command::new("cargo")
+        .arg("generate-lockfile")
+        .status()
+        .await
+        .context("failed to generate lockfile")?;
+
+    Ok(())
+}
+
+async fn git_commit() -> Result<()> {
+    let mut files = vec![];
+    for e in WalkDir::new(".") {
+        let e = e?;
+
+        if e.path().is_file() {
+            if let Some(name) = e.path().file_name() {
+                if name == "Cargo.lock" || name == "Cargo.toml" {
+                    files.push(e.path().to_path_buf());
+                }
+            }
+        }
+    }
+
+    let mut cmd = Command::new("git");
+    cmd.arg("commit");
+
+    for file in &*files {
+        if !is_ignored_by_git(&file).await? {
+            cmd.arg(file);
+        }
+    }
+
+    cmd.arg("-m").arg("Bump version");
+
+    cmd.status().await.context("failed to run git")?;
+
+    Ok(())
+}
+
+async fn is_ignored_by_git(path: &Path) -> Result<bool> {
+    Command::new("git")
+        .arg("check-ignore")
+        .arg(path)
+        .output()
+        .await
+        .map(|output| output.status.success())
+        .context("failed to run git")
 }
