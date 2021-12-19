@@ -48,7 +48,7 @@ pub struct BumpCommand {
 }
 
 impl BumpCommand {
-    async fn get_crates_to_bump(&self, crates: &[Package]) -> Result<Vec<String>> {
+    fn get_crates_to_bump(&self, crates: &[Package]) -> Result<Vec<String>> {
         if let Some(n) = &self.crate_name {
             return Ok(vec![n.clone()]);
         }
@@ -87,22 +87,16 @@ impl BumpCommand {
 
         let crates_to_bump = self
             .get_crates_to_bump(&publishable_crates)
-            .await
             .context("failed to get crates to bump")?;
 
         for crate_to_bump in crates_to_bump {
-            let main = match workspace_crates.iter().find(|p| p.name == crate_to_bump) {
-                None => bail!("Package {} is not a member of workspace", crate_to_bump),
-                Some(v) => v.clone(),
-            };
-
             // Get list of crates to bump
             let mut dependants = Default::default();
             public_dependants(
                 self.interactive,
                 &mut dependants,
                 &published_versions,
-                &workspace_crates,
+                &publishable_crates,
                 &crate_to_bump,
                 self.breaking,
                 self.with_dependants,
@@ -110,21 +104,15 @@ impl BumpCommand {
 
             let dependants = Arc::new(dependants);
 
-            if self.breaking || self.with_dependants {
-                for dep in dependants.keys() {
-                    match workspace_crates.iter().find(|p| p.name == &**dep) {
-                        None => bail!("Package {} is not a member of workspace", crate_to_bump),
-                        Some(v) => {
-                            patch(v.clone(), dependants.clone())
-                                .await
-                                .with_context(|| format!("failed to patch {}", v.name))?;
-                        }
-                    };
-                }
-            } else {
-                patch(main.clone(), dependants.clone())
-                    .await
-                    .with_context(|| format!("failed to patch {}", crate_to_bump))?;
+            for dep in dependants.keys() {
+                match workspace_crates.iter().find(|p| p.name == &**dep) {
+                    None => bail!("Package {} is not a member of workspace", crate_to_bump),
+                    Some(v) => {
+                        patch(v.clone(), dependants.clone())
+                            .await
+                            .with_context(|| format!("failed to patch {}", v.name))?;
+                    }
+                };
             }
         }
 
@@ -213,6 +201,36 @@ async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) ->
     .expect("failed to edit toml file")
 }
 
+fn determine_dependants_to_bump(packages: &[Package], cur_crate: &str) -> Result<Vec<String>> {
+    let dependants = packages
+        .iter()
+        .filter(|p| p.dependencies.iter().any(|dep| dep.name == cur_crate))
+        .collect::<Vec<_>>();
+
+    if dependants.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let q = Question::multi_select("crates")
+        .message(format!(
+            "Select dependants to modify dependency on {}",
+            cur_crate
+        ))
+        .choices(dependants.iter().map(|p| &*p.name));
+
+    let answer = prompt_one(q).context("failed to prompt")?;
+
+    match answer {
+        Answer::ListItems(v) => Ok(v.into_iter().map(|v| v.text).collect()),
+        _ => {
+            bail!(
+                "Expected answer of type `Answer::ListItems`, got {:?}",
+                answer
+            )
+        }
+    }
+}
+
 /// This is recursive and returned value does not contain original crate itself.
 fn public_dependants<'a>(
     interactive: bool,
@@ -228,6 +246,13 @@ fn public_dependants<'a>(
     //     "Packages: {:?}",
     //     packages.iter().map(|v| &*v.name).collect::<Vec<_>>()
     // );
+
+    let dependants_to_bump = if interactive {
+        determine_dependants_to_bump(packages, crate_to_bump)
+            .context("failed to determine the dependants to bump")?
+    } else {
+        vec![]
+    };
 
     for p in packages {
         if !can_publish(&p) {
@@ -246,7 +271,7 @@ fn public_dependants<'a>(
             continue;
         }
 
-        if breaking || with_dependants {
+        if !interactive && (breaking || with_dependants) {
             for dep in &p.dependencies {
                 if dep.name == crate_to_bump {
                     eprintln!("{} depends on {}", p.name, dep.name);
@@ -263,6 +288,18 @@ fn public_dependants<'a>(
                 }
             }
         }
+    }
+
+    for dep in dependants_to_bump {
+        public_dependants(
+            interactive,
+            dependants,
+            published_versions,
+            packages,
+            &dep,
+            breaking,
+            with_dependants,
+        )?;
     }
 
     Ok(())
