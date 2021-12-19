@@ -5,7 +5,6 @@ use std::env;
 use structopt::StructOpt;
 
 mod bump;
-mod check;
 mod info;
 mod publish;
 mod util;

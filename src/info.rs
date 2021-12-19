@@ -5,6 +5,7 @@ use tokio::task::spawn_blocking;
 pub async fn fetch_ws_crates() -> Result<Vec<Package>> {
     spawn_blocking(|| -> Result<_> {
         let res = cargo_metadata::MetadataCommand::new()
+            .no_deps()
             .exec()
             .context("failed to run `cargo metadata`")?;
         let packages = res.packages;
