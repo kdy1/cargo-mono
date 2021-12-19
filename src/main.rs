@@ -17,7 +17,7 @@ enum Command {
     Publish(PublishCommand),
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::main]
 async fn main() -> Result<()> {
     let args = {
         let mut args = env::args().collect::<Vec<_>>();
