@@ -100,6 +100,7 @@ impl BumpCommand {
             // Get list of crates to bump
             let mut dependants = Default::default();
             public_dependants(
+                self.interactive,
                 &mut dependants,
                 &published_versions,
                 &workspace_crates,
@@ -215,6 +216,7 @@ async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) ->
 
 /// This is recursive and returned value does not contain original crate itself.
 fn public_dependants<'a>(
+    interactive: bool,
     dependants: &'a mut HashMap<String, Version>,
     published_versions: &'a HashMap<String, Version>,
     packages: &'a [Package],
@@ -252,6 +254,7 @@ fn public_dependants<'a>(
                         eprintln!("{} depends on {}", p.name, dep.name);
 
                         public_dependants(
+                            interactive,
                             dependants,
                             published_versions,
                             packages,
