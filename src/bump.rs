@@ -5,6 +5,7 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
 use futures_util::future::{BoxFuture, FutureExt};
+use requestty::{prompt_one, Answer, Question};
 use semver::Version;
 use std::{
     collections::HashMap,
@@ -17,7 +18,7 @@ use tokio::{process::Command, task::spawn_blocking};
 use toml_edit::{Item, Value};
 use walkdir::WalkDir;
 
-/// "Bump versions of a crate and dependant crates.
+/// Bump versions of a crate and dependant crates.
 ///
 /// The command ensures that the version is bumped compared to **the published
 /// version on crates.io**,
@@ -25,8 +26,12 @@ use walkdir::WalkDir;
 #[derive(Debug, StructOpt)]
 pub struct BumpCommand {
     /// Name of the crate to bump version
-    #[structopt(name = "crate")]
-    pub crate_name: String,
+    #[structopt(name = "crate", required_unless = "interactive")]
+    pub crate_name: Option<String>,
+
+    /// Run in interactive mode
+    #[structopt(short = "i", long)]
+    pub interactive: bool,
 
     /// True if it's a breaking change.
     #[structopt(long)]
@@ -44,47 +49,83 @@ pub struct BumpCommand {
 }
 
 impl BumpCommand {
-    pub async fn run(&self) -> Result<()> {
-        let ws_packages = fetch_ws_crates().await?;
+    async fn get_crates_to_bump(&self, crates: &[Package]) -> Result<Vec<String>> {
+        if let Some(n) = &self.crate_name {
+            return Ok(vec![n.clone()]);
+        }
 
-        let crate_names = ws_packages.iter().map(|p| &*p.name).collect::<Vec<_>>();
+        let q = Question::multi_select("crates")
+            .message("Select crates to bump version")
+            .choices(crates.iter().map(|p| &*p.name));
+
+        let answer = prompt_one(q).context("failed to prompt")?;
+
+        match answer {
+            Answer::ListItems(v) => Ok(v.into_iter().map(|v| v.text).collect()),
+            _ => {
+                bail!(
+                    "Expected answer of type `Answer::ListItems`, got {:?}",
+                    answer
+                )
+            }
+        }
+    }
+
+    pub async fn run(&self) -> Result<()> {
+        let workspace_crates = fetch_ws_crates().await?;
+
+        let crate_names = workspace_crates
+            .iter()
+            .map(|p| &*p.name)
+            .collect::<Vec<_>>();
         let published_versions = get_published_versions(&crate_names).await?;
 
-        let crate_to_bump = &*self.crate_name;
+        let publishable_crates = workspace_crates
+            .iter()
+            .filter(|p| published_versions.contains_key(&p.name))
+            .cloned()
+            .collect::<Vec<_>>();
 
-        let main = match ws_packages.iter().find(|p| p.name == crate_to_bump) {
-            None => bail!("Package {} is not a member of workspace", crate_to_bump),
-            Some(v) => v.clone(),
-        };
+        let crates_to_bump = self
+            .get_crates_to_bump(&publishable_crates)
+            .await
+            .context("failed to get crates to bump")?;
 
-        // Get list of crates to bump
-        let mut dependants = Default::default();
-        public_dependants(
-            &mut dependants,
-            &published_versions,
-            &ws_packages,
-            &crate_to_bump,
-            self.breaking,
-            self.with_dependants,
-        )
-        .await?;
-        let dependants = Arc::new(dependants);
+        for crate_to_bump in crates_to_bump {
+            let main = match workspace_crates.iter().find(|p| p.name == crate_to_bump) {
+                None => bail!("Package {} is not a member of workspace", crate_to_bump),
+                Some(v) => v.clone(),
+            };
 
-        if self.breaking || self.with_dependants {
-            for dep in dependants.keys() {
-                match ws_packages.iter().find(|p| p.name == &**dep) {
-                    None => bail!("Package {} is not a member of workspace", crate_to_bump),
-                    Some(v) => {
-                        patch(v.clone(), dependants.clone())
-                            .await
-                            .with_context(|| format!("failed to patch {}", v.name))?;
-                    }
-                };
+            // Get list of crates to bump
+            let mut dependants = Default::default();
+            public_dependants(
+                &mut dependants,
+                &published_versions,
+                &workspace_crates,
+                &crate_to_bump,
+                self.breaking,
+                self.with_dependants,
+            )
+            .await?;
+            let dependants = Arc::new(dependants);
+
+            if self.breaking || self.with_dependants {
+                for dep in dependants.keys() {
+                    match workspace_crates.iter().find(|p| p.name == &**dep) {
+                        None => bail!("Package {} is not a member of workspace", crate_to_bump),
+                        Some(v) => {
+                            patch(v.clone(), dependants.clone())
+                                .await
+                                .with_context(|| format!("failed to patch {}", v.name))?;
+                        }
+                    };
+                }
+            } else {
+                patch(main.clone(), dependants.clone())
+                    .await
+                    .with_context(|| format!("failed to patch {}", crate_to_bump))?;
             }
-        } else {
-            patch(main.clone(), dependants.clone())
-                .await
-                .with_context(|| format!("failed to patch {}", crate_to_bump))?;
         }
 
         generate_lockfile()
