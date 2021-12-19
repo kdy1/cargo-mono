@@ -11,10 +11,12 @@ pub async fn fetch_ws_crates() -> Result<Vec<Package>> {
         let packages = res.packages;
         let members = res.workspace_members;
 
-        let ws_packages = packages
+        let mut ws_packages = packages
             .into_iter()
             .filter(|p| members.iter().any(|pid| *pid == p.id))
             .collect::<Vec<_>>();
+
+        ws_packages.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok(ws_packages)
     })
