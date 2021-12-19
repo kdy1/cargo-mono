@@ -2,7 +2,7 @@
 authors = ["강동윤 <kdy1997.dev@gmail.com>"]
 description = "Cargo subcommand to manage mono repository"
 edition = "2018"
-license = "Apache-2.0/MIT"
+license = "Apache-2.0"
 name = "cargo-mono"
 repository = "https://github.com/kdy1/cargo-mono.git"
 version = "0.2.4"
