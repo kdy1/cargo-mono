@@ -10,6 +10,12 @@ cargo install cargo-mono
 
 # Usage
 
+## cargo mono bump (interactive)
+
+```
+cargo mono bump -i
+```
+
 ## cargo mono bump
 
 ```
