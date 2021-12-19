@@ -98,8 +98,8 @@ impl BumpCommand {
                 &published_versions,
                 &publishable_crates,
                 &crate_to_bump,
-                self.breaking,
-                self.with_dependants,
+                !self.interactive && self.breaking,
+                !self.interactive && self.with_dependants,
             )?;
 
             let dependants = Arc::new(dependants);
@@ -201,14 +201,45 @@ async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) ->
     .expect("failed to edit toml file")
 }
 
-fn determine_dependants_to_bump(packages: &[Package], cur_crate: &str) -> Result<Vec<String>> {
+/// Returns `(breaking, dependants)`.
+fn determine_dependants_to_bump(
+    packages: &[Package],
+    cur_crate: &str,
+    breaking: bool,
+) -> Result<(bool, Vec<String>)> {
     let dependants = packages
         .iter()
         .filter(|p| p.dependencies.iter().any(|dep| dep.name == cur_crate))
         .collect::<Vec<_>>();
 
     if dependants.is_empty() {
-        return Ok(vec![]);
+        return Ok((breaking, vec![]));
+    }
+
+    // We don't need to ask in this case.
+    //
+    // Actually we may need to handle this in future. Not all breaking changes to
+    // deps is breaking change for the crate, but for now it's overkill.
+    if breaking {
+        return Ok((true, dependants.iter().map(|p| p.name.clone()).collect()));
+    }
+
+    {
+        let q = Question::confirm("breaking")
+            .message(format!("Is the change of `{}` breaking change?", cur_crate))
+            .build();
+
+        let answer = prompt_one(q).context("failed to ask if it's a breaking change")?;
+        match answer {
+            Answer::Bool(v) => {
+                if v {
+                    return Ok((true, dependants.iter().map(|p| p.name.clone()).collect()));
+                }
+            }
+            _ => {
+                bail!("Expected answer of type `Answer::Bool`, got {:?}", answer)
+            }
+        }
     }
 
     let q = Question::multi_select("crates")
@@ -221,7 +252,7 @@ fn determine_dependants_to_bump(packages: &[Package], cur_crate: &str) -> Result
     let answer = prompt_one(q).context("failed to prompt")?;
 
     match answer {
-        Answer::ListItems(v) => Ok(v.into_iter().map(|v| v.text).collect()),
+        Answer::ListItems(v) => Ok((false, v.into_iter().map(|v| v.text).collect())),
         _ => {
             bail!(
                 "Expected answer of type `Answer::ListItems`, got {:?}",
@@ -247,11 +278,15 @@ fn public_dependants<'a>(
     //     packages.iter().map(|v| &*v.name).collect::<Vec<_>>()
     // );
 
-    let dependants_to_bump = if interactive {
-        determine_dependants_to_bump(packages, crate_to_bump)
+    if dependants.contains_key(&crate_to_bump.to_string()) {
+        return Ok(());
+    }
+
+    let (breaking, dependants_to_bump) = if interactive {
+        determine_dependants_to_bump(packages, crate_to_bump, breaking)
             .context("failed to determine the dependants to bump")?
     } else {
-        vec![]
+        (breaking, vec![])
     };
 
     for p in packages {
