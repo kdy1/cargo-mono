@@ -4,7 +4,6 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
-use futures_util::future::{BoxFuture, FutureExt};
 use requestty::{prompt_one, Answer, Question};
 use semver::Version;
 use std::{
@@ -107,8 +106,8 @@ impl BumpCommand {
                 &crate_to_bump,
                 self.breaking,
                 self.with_dependants,
-            )
-            .await?;
+            )?;
+
             let dependants = Arc::new(dependants);
 
             if self.breaking || self.with_dependants {
@@ -223,54 +222,50 @@ fn public_dependants<'a>(
     crate_to_bump: &'a str,
     breaking: bool,
     with_dependants: bool,
-) -> BoxFuture<'a, Result<()>> {
+) -> Result<()> {
     eprintln!("Calculating dependants of `{}`", crate_to_bump);
     // eprintln!(
     //     "Packages: {:?}",
     //     packages.iter().map(|v| &*v.name).collect::<Vec<_>>()
     // );
 
-    async move {
-        for p in packages {
-            if !can_publish(&p) {
-                continue;
-            }
+    for p in packages {
+        if !can_publish(&p) {
+            continue;
+        }
 
-            if dependants.contains_key(&p.name) {
-                continue;
-            }
+        if dependants.contains_key(&p.name) {
+            continue;
+        }
 
-            if p.name == crate_to_bump {
-                let previous = published_versions[&p.name].clone();
-                let new_version = calc_bumped_version(previous, breaking)?;
+        if p.name == crate_to_bump {
+            let previous = published_versions[&p.name].clone();
+            let new_version = calc_bumped_version(previous, breaking)?;
 
-                dependants.insert(p.name.clone(), new_version);
-                continue;
-            }
+            dependants.insert(p.name.clone(), new_version);
+            continue;
+        }
 
-            if breaking || with_dependants {
-                for dep in &p.dependencies {
-                    if dep.name == crate_to_bump {
-                        eprintln!("{} depends on {}", p.name, dep.name);
+        if breaking || with_dependants {
+            for dep in &p.dependencies {
+                if dep.name == crate_to_bump {
+                    eprintln!("{} depends on {}", p.name, dep.name);
 
-                        public_dependants(
-                            interactive,
-                            dependants,
-                            published_versions,
-                            packages,
-                            &p.name,
-                            breaking,
-                            with_dependants,
-                        )
-                        .await?;
-                    }
+                    public_dependants(
+                        interactive,
+                        dependants,
+                        published_versions,
+                        packages,
+                        &p.name,
+                        breaking,
+                        with_dependants,
+                    )?;
                 }
             }
         }
-
-        Ok(())
     }
-    .boxed()
+
+    Ok(())
 }
 
 fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
