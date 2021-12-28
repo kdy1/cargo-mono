@@ -361,8 +361,10 @@ fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
 
 async fn generate_lockfile() -> Result<()> {
     Command::new("cargo")
-        .arg("generate-lockfile")
-        .status()
+        .arg("metadata")
+        .arg("--format-version")
+        .arg("1")
+        .output()
         .await
         .context("failed to generate lockfile")?;
 
