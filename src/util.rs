@@ -1,8 +1,9 @@
+use std::{collections::HashMap, time::Duration};
+
 use anyhow::{bail, Context, Error, Result};
 use cargo_metadata::Package;
 use futures_util::future::join_all;
 use semver::Version;
-use std::{collections::HashMap, time::Duration};
 
 pub async fn get_published_versions(names: &[&str]) -> Result<HashMap<String, Version>> {
     let mut futures = vec![];

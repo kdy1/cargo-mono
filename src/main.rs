@@ -1,7 +1,8 @@
+use std::env;
+
 use anyhow::{Context, Result};
 use bump::BumpCommand;
 use publish::PublishCommand;
-use std::env;
 use structopt::StructOpt;
 
 mod bump;

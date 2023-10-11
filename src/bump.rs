@@ -1,21 +1,23 @@
-use crate::{
-    info::fetch_ws_crates,
-    util::{can_publish, get_published_versions},
-};
-use anyhow::{bail, Context, Result};
-use cargo_metadata::Package;
-use requestty::{prompt_one, Answer, Question};
-use semver::Version;
 use std::{
     collections::HashMap,
     fs::{read_to_string, write},
     path::Path,
     sync::Arc,
 };
+
+use anyhow::{bail, Context, Result};
+use cargo_metadata::Package;
+use requestty::{prompt_one, Answer, Question};
+use semver::Version;
 use structopt::StructOpt;
 use tokio::{process::Command, task::spawn_blocking};
 use toml_edit::{Item, Value};
 use walkdir::WalkDir;
+
+use crate::{
+    info::fetch_ws_crates,
+    util::{can_publish, get_published_versions},
+};
 
 /// Bump versions of a crate and dependant crates.
 ///
