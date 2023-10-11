@@ -1,18 +1,20 @@
-use crate::{
-    info::fetch_ws_crates,
-    util::{can_publish, get_published_versions},
-};
+use std::{collections::HashMap, process::Stdio, time::Duration};
+
 use anyhow::{bail, Context, Result};
 use cargo_metadata::{Package, PackageId};
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
 use semver::Version;
-use std::{collections::HashMap, process::Stdio, time::Duration};
 use structopt::StructOpt;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
     spawn,
     time::sleep,
+};
+
+use crate::{
+    info::fetch_ws_crates,
+    util::{can_publish, get_published_versions},
 };
 
 /// Publishes crates and its dependencies.
