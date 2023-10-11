@@ -5,12 +5,16 @@ edition = "2018"
 license = "Apache-2.0"
 name = "cargo-mono"
 repository = "https://github.com/kdy1/cargo-mono.git"
-version = "0.3.2"
+version = "0.3.3"
 
 [dependencies]
 anyhow = "1.0.40"
 cargo_metadata = "0.13.1"
-crates-index = { version = "2.2.0", features = ["git"] }
+crates-index = { version = "2.2.0", features = [
+    "git",
+    "git-https",
+    "git-performance",
+] }
 futures-util = "0.3.15"
 petgraph = "0.5.1"
 requestty = "0.1.3"
