@@ -1,6 +1,6 @@
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
 use futures_util::future::join_all;
 use semver::Version;
