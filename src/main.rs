@@ -29,6 +29,13 @@ async fn main() -> Result<()> {
         args
     };
 
+    {
+        eprintln!("Updating crates.io index...");
+        let mut index = crates_index::GitIndex::new_cargo_default()
+            .context("failed to read the git index for crates.io")?;
+        index.update()?;
+    }
+
     let cmd = Command::from_iter(args);
 
     match cmd {
