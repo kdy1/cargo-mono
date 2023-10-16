@@ -43,7 +43,7 @@ impl PublishCommand {
 
         let crate_names = ws_packages.iter().map(|s| &*s.name).collect::<Vec<_>>();
 
-        let published_versions = get_published_versions(&crate_names).await?;
+        let published_versions = get_published_versions(&crate_names, true).await?;
 
         let target_crate = &*self.crate_name;
         let allow_only_deps = self.allow_only_deps;

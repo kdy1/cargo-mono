@@ -158,7 +158,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-mono"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "anyhow",
  "cargo_metadata",

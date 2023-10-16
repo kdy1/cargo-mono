@@ -5,10 +5,13 @@ use cargo_metadata::Package;
 use futures_util::future::join_all;
 use semver::Version;
 
-pub async fn get_published_versions(names: &[&str]) -> Result<HashMap<String, Version>> {
+pub async fn get_published_versions(
+    names: &[&str],
+    allow_not_found: bool,
+) -> Result<HashMap<String, Version>> {
     let mut futures = vec![];
     for &name in names {
-        futures.push(fetch_published_version(name));
+        futures.push(fetch_published_version(name, allow_not_found));
     }
     let results = join_all(futures).await;
 
@@ -31,13 +34,20 @@ pub async fn get_published_versions(names: &[&str]) -> Result<HashMap<String, Ve
 }
 
 /// Fetches the current version from crates.io
-async fn fetch_published_version(name: &str) -> Result<Version> {
+async fn fetch_published_version(name: &str, allow_not_found: bool) -> Result<Version> {
     let index = crates_index::GitIndex::new_cargo_default()
         .context("failed to read the git index for crates.io")?;
 
-    let pkg = index
-        .crate_(name)
-        .ok_or_else(|| anyhow::anyhow!("failed to find crate {}", name))?;
+    let pkg = match index.crate_(name) {
+        Some(v) => v,
+        None => {
+            if !allow_not_found {
+                bail!("failed to find crate {}", name)
+            }
+            return Ok(Version::new(0, 0, 0));
+        }
+    };
+
     let v = pkg.highest_version();
     Ok(v.version()
         .parse()
