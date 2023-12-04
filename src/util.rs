@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
 use futures_util::future::join_all;
-use semver::Version;
+use semver::{Version, VersionReq};
+use serde::Deserialize;
 
 pub async fn get_published_versions(
     names: &[&str],
@@ -34,7 +35,7 @@ pub async fn get_published_versions(
 }
 
 /// Fetches the current version from crates.io
-async fn fetch_published_version(name: &str, allow_not_found: bool) -> Result<Version> {
+async fn fetch_published_version(package_name: &str, allow_not_found: bool) -> Result<Version> {
     let body = reqwest::get(&build_url(package_name)).await?.text().await?;
 
     let mut v = body
@@ -46,10 +47,6 @@ async fn fetch_published_version(name: &str, allow_not_found: bool) -> Result<Ve
                 Ok(v) => v,
                 Err(err) => return Some(Err(anyhow!("failed to parse line: {:?}\n{}", err, line))),
             };
-
-            if !constraints.matches(&line.vers) {
-                return None;
-            }
 
             Some(Ok(PackageVersion {
                 name: line.name,
@@ -69,9 +66,13 @@ async fn fetch_published_version(name: &str, allow_not_found: bool) -> Result<Ve
         .with_context(|| format!("failed to parse index of {}", package_name))?;
 
     let v = pkg.highest_version();
-    Ok(v.version()
-        .parse()
-        .with_context(|| format!("failed to parse version of {} ({})", name, v.version()))?)
+    Ok(v.version().parse().with_context(|| {
+        format!(
+            "failed to parse version of {} ({})",
+            package_name,
+            v.version()
+        )
+    })?)
 }
 
 pub fn can_publish(p: &Package) -> bool {
@@ -106,4 +107,20 @@ fn build_url(name: &str) -> String {
             format!("https://index.crates.io/{first_two}/{second_two}/{name}",)
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct Descriptor {
+    pub name: String,
+    pub vers: Version,
+    pub deps: Vec<DepDescriptor>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DepDescriptor {
+    pub name: String,
+    pub req: VersionReq,
+    pub kind: String,
+    #[serde(default)]
+    pub package: Option<String>,
 }
