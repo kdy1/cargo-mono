@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
 use futures_util::future::join_all;
-use semver::{Version, VersionReq};
+use semver::Version;
 use serde::Deserialize;
 
 pub async fn get_published_versions(
@@ -45,34 +45,26 @@ async fn fetch_published_version(package_name: &str, allow_not_found: bool) -> R
             let desc = serde_json::from_str::<Descriptor>(&line);
             let line = match desc {
                 Ok(v) => v,
-                Err(err) => return Some(Err(anyhow!("failed to parse line: {:?}\n{}", err, line))),
+                Err(err) => {
+                    return Some(Err(anyhow::anyhow!(
+                        "failed to parse line: {:?}\n{}",
+                        err,
+                        line
+                    )))
+                }
             };
 
-            Some(Ok(PackageVersion {
-                name: line.name,
-                version: line.vers,
-                deps: line
-                    .deps
-                    .into_iter()
-                    .filter(|dep| dep.kind == "normal")
-                    .map(|d| Dependency {
-                        name: d.package.unwrap_or(d.name),
-                        constraints: d.req,
-                    })
-                    .collect(),
-            }))
+            Some(Ok(line.vers))
         })
         .collect::<Result<Vec<_>>>()
         .with_context(|| format!("failed to parse index of {}", package_name))?;
 
-    let v = pkg.highest_version();
-    Ok(v.version().parse().with_context(|| {
-        format!(
-            "failed to parse version of {} ({})",
-            package_name,
-            v.version()
-        )
-    })?)
+    v.sort_by(|a, b| b.cmp(a));
+
+    if allow_not_found && v.is_empty() {
+        return Ok(Version::new(0, 0, 0));
+    }
+    Ok(v[0].clone())
 }
 
 pub fn can_publish(p: &Package) -> bool {
@@ -111,16 +103,5 @@ fn build_url(name: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 struct Descriptor {
-    pub name: String,
     pub vers: Version,
-    pub deps: Vec<DepDescriptor>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DepDescriptor {
-    pub name: String,
-    pub req: VersionReq,
-    pub kind: String,
-    #[serde(default)]
-    pub package: Option<String>,
 }
