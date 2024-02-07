@@ -77,6 +77,7 @@ impl BumpCommand {
 
         let crate_names = workspace_crates
             .iter()
+            .filter(|p| can_publish(p))
             .map(|p| &*p.name)
             .collect::<Vec<_>>();
         let published_versions = get_published_versions(&crate_names, true).await?;
