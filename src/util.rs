@@ -6,34 +6,6 @@ use futures_util::future::join_all;
 use semver::Version;
 use serde::Deserialize;
 
-pub async fn get_published_versions(
-    names: &[&str],
-    allow_not_found: bool,
-) -> Result<HashMap<String, Version>> {
-    let mut futures = vec![];
-    for &name in names {
-        futures.push(fetch_published_version(name, allow_not_found));
-    }
-    let results = join_all(futures).await;
-
-    if results.iter().any(|res| res.is_err()) {
-        let errors: String = results
-            .into_iter()
-            .filter_map(Result::err)
-            .map(|err| format!("{:?}", err))
-            .collect();
-
-        bail!("failed to get version of crates: \n{}", errors);
-    }
-
-    Ok(results
-        .into_iter()
-        .map(Result::unwrap)
-        .enumerate()
-        .map(|(idx, v)| (names[idx].to_string(), v))
-        .collect())
-}
-
 /// Fetches the current version from crates.io
 async fn fetch_published_version(package_name: &str, allow_not_found: bool) -> Result<Version> {
     let body = reqwest::get(&build_url(package_name)).await?.text().await?;

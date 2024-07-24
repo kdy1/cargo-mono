@@ -7,45 +7,42 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use cargo_metadata::Package;
+use clap::Args;
 use requestty::{prompt_one, Answer, Question};
 use semver::Version;
-use structopt::StructOpt;
 use tokio::{process::Command, task::spawn_blocking};
 use toml_edit::{Item, Value};
 use walkdir::WalkDir;
 
-use crate::{
-    info::fetch_ws_crates,
-    util::{can_publish, get_published_versions},
-};
+use crate::{info::fetch_ws_crates, util::can_publish};
 
 /// Bump versions of a crate and dependant crates.
 ///
 /// The command ensures that the version is bumped compared to **the published
 /// version on crates.io**,
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Args)]
 pub struct BumpCommand {
     /// Name of the crate to bump version
-    #[structopt(name = "crate", required_unless = "interactive")]
+    #[clap(name = "crate")]
     pub crate_name: Option<String>,
 
     /// Run in interactive mode
-    #[structopt(short = "i", long)]
+    #[clap(short = 'i', long)]
     pub interactive: bool,
 
     /// True if it's a breaking change.
-    #[structopt(long)]
+    #[clap(long)]
     pub breaking: bool,
 
     /// Bump version of dependants and update requirements.
     ///
     /// Has effect only if `breaking` is false.
-    #[structopt(short = "D", long)]
+    #[clap(short = 'D', long)]
     pub with_dependants: bool,
 
     /// Commit with the messahe `Bump version`.
-    #[structopt(short = "g", long)]
+    #[clap(short = 'g', long)]
     pub git: bool,
 }
 
@@ -80,11 +77,10 @@ impl BumpCommand {
             .filter(|p| can_publish(p))
             .map(|p| &*p.name)
             .collect::<Vec<_>>();
-        let published_versions = get_published_versions(&crate_names, true).await?;
 
         let publishable_crates = workspace_crates
             .iter()
-            .filter(|p| published_versions.contains_key(&p.name))
+            .filter(|p| p.publish.is_none())
             .cloned()
             .collect::<Vec<_>>();
 
