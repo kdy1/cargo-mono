@@ -2,6 +2,7 @@ use std::{collections::HashMap, process::Stdio, time::Duration};
 
 use anyhow::{bail, Context, Result};
 use cargo_metadata::{Package, PackageId};
+use clap::Args;
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
 use semver::Version;
 use structopt::StructOpt;
@@ -12,24 +13,21 @@ use tokio::{
     time::sleep,
 };
 
-use crate::{
-    info::fetch_ws_crates,
-    util::{can_publish, get_published_versions},
-};
+use crate::{info::fetch_ws_crates, util::can_publish};
 
 /// Publishes crates and its dependencies.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Args)]
 pub struct PublishCommand {
     /// Name of the crate to publish.
-    #[structopt(name = "crate", default_value = "*")]
+    #[clap(name = "crate", default_value = "*")]
     pub crate_name: String,
 
     /// Allow publishing only dependencies
-    #[structopt(long)]
+    #[clap(long)]
     pub allow_only_deps: bool,
 
     /// Skip verification.
-    #[structopt(long)]
+    #[clap(long)]
     pub no_verify: bool,
 }
 
@@ -42,8 +40,6 @@ impl PublishCommand {
             .collect::<Vec<_>>();
 
         let crate_names = ws_packages.iter().map(|s| &*s.name).collect::<Vec<_>>();
-
-        let published_versions = get_published_versions(&crate_names, true).await?;
 
         let target_crate = &*self.crate_name;
         let allow_only_deps = self.allow_only_deps;
