@@ -2,16 +2,16 @@ use std::env;
 
 use anyhow::{Context, Result};
 use bump::BumpCommand;
+use clap::Parser;
 use publish::PublishCommand;
-use structopt::StructOpt;
 
 mod bump;
-mod info;
+mod cargo_workspace;
+mod crates_io;
 mod publish;
-mod util;
 
-#[derive(Debug, StructOpt)]
-#[structopt(author, about)]
+#[derive(Debug, Parser)]
+#[clap(author, about)]
 enum Command {
     Bump(BumpCommand),
     Publish(PublishCommand),
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
         args
     };
 
-    let cmd = Command::from_iter(args);
+    let cmd = Command::parse_from(args);
 
     match cmd {
         Command::Bump(cmd) => {

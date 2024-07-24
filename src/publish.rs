@@ -1,10 +1,9 @@
-use std::{collections::HashMap, process::Stdio, time::Duration};
+use std::{process::Stdio, time::Duration};
 
 use anyhow::{bail, Context, Result};
 use cargo_metadata::{Package, PackageId};
+use clap::Args;
 use petgraph::{algo::toposort, graphmap::DiGraphMap};
-use semver::Version;
-use structopt::StructOpt;
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
@@ -13,23 +12,23 @@ use tokio::{
 };
 
 use crate::{
-    info::fetch_ws_crates,
-    util::{can_publish, get_published_versions},
+    cargo_workspace::fetch_ws_crates,
+    crates_io::{can_publish, fetch_published_version},
 };
 
 /// Publishes crates and its dependencies.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Args)]
 pub struct PublishCommand {
     /// Name of the crate to publish.
-    #[structopt(name = "crate", default_value = "*")]
+    #[clap(name = "crate", default_value = "*")]
     pub crate_name: String,
 
     /// Allow publishing only dependencies
-    #[structopt(long)]
+    #[clap(long)]
     pub allow_only_deps: bool,
 
     /// Skip verification.
-    #[structopt(long)]
+    #[clap(long)]
     pub no_verify: bool,
 }
 
@@ -41,18 +40,14 @@ impl PublishCommand {
             .filter(can_publish)
             .collect::<Vec<_>>();
 
-        let crate_names = ws_packages.iter().map(|s| &*s.name).collect::<Vec<_>>();
-
-        let published_versions = get_published_versions(&crate_names, true).await?;
-
         let target_crate = &*self.crate_name;
         let allow_only_deps = self.allow_only_deps;
-        let graph = dependency_graph(&ws_packages, &target_crate);
+        let graph = dependency_graph(&ws_packages, target_crate);
 
         if !allow_only_deps {
             let p = ws_packages.iter().find(|p| p.name == target_crate);
             if let Some(p) = p {
-                let published_version = published_versions[&p.name].clone();
+                let published_version = fetch_published_version(&p.name, true).await?;
 
                 if published_version >= p.version {
                     bail!("version of `{}` is same as published version", p.name)
@@ -71,7 +66,6 @@ impl PublishCommand {
             if let Some(pkg) = pkg {
                 publish_if_possible(
                     pkg,
-                    &published_versions,
                     PublishOpts {
                         no_verify: self.no_verify,
                     },
@@ -84,16 +78,12 @@ impl PublishCommand {
         Ok(())
     }
 }
-async fn publish_if_possible(
-    package: &Package,
-    published_versions: &HashMap<String, Version>,
-    opts: PublishOpts,
-) -> Result<()> {
+async fn publish_if_possible(package: &Package, opts: PublishOpts) -> Result<()> {
     eprintln!("Checking if `{}` should be published", package.name);
 
-    let published_version = &published_versions[&package.name];
+    let published_version = fetch_published_version(&package.name, true).await?;
 
-    if *published_version < package.version {
+    if published_version < package.version {
         publish(package, opts).await.context("failed to publish")?;
     }
 
