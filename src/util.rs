@@ -4,7 +4,7 @@ use semver::Version;
 use serde::Deserialize;
 
 /// Fetches the current version from crates.io
-async fn fetch_published_version(package_name: &str, allow_not_found: bool) -> Result<Version> {
+pub async fn fetch_published_version(package_name: &str, allow_not_found: bool) -> Result<Version> {
     let body = reqwest::get(&build_url(package_name)).await?.text().await?;
 
     let mut v = body

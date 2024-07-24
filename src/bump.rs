@@ -94,7 +94,6 @@ impl BumpCommand {
             public_dependants(
                 self.interactive,
                 &mut dependants,
-                &published_versions,
                 &publishable_crates,
                 &crate_to_bump,
                 !self.interactive && self.breaking,
@@ -265,7 +264,6 @@ fn determine_dependants_to_bump(
 fn public_dependants<'a>(
     interactive: bool,
     dependants: &'a mut HashMap<String, Version>,
-    published_versions: &'a HashMap<String, Version>,
     packages: &'a [Package],
     crate_to_bump: &'a str,
     breaking: bool,
