@@ -347,12 +347,10 @@ fn calc_bumped_version(mut v: Version, breaking: bool) -> Result<Version> {
         } else {
             v.increment_patch();
         }
+    } else if breaking {
+        v.increment_major()
     } else {
-        if breaking {
-            v.increment_major()
-        } else {
-            v.increment_patch();
-        }
+        v.increment_patch();
     }
 
     Ok(v)

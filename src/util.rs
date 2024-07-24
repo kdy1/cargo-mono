@@ -1,8 +1,5 @@
-use std::collections::HashMap;
-
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use cargo_metadata::Package;
-use futures_util::future::join_all;
 use semver::Version;
 use serde::Deserialize;
 
