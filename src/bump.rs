@@ -16,8 +16,8 @@ use toml_edit::{Item, Value};
 use walkdir::WalkDir;
 
 use crate::{
-    info::fetch_ws_crates,
-    util::{can_publish, fetch_published_version},
+    cargo_workspace::fetch_ws_crates,
+    crates_io::{can_publish, fetch_published_version},
 };
 
 /// Bump versions of a crate and dependant crates.

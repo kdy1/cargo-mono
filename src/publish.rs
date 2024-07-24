@@ -12,8 +12,8 @@ use tokio::{
 };
 
 use crate::{
-    info::fetch_ws_crates,
-    util::{can_publish, fetch_published_version},
+    cargo_workspace::fetch_ws_crates,
+    crates_io::{can_publish, fetch_published_version},
 };
 
 /// Publishes crates and its dependencies.

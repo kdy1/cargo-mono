@@ -6,9 +6,9 @@ use clap::Parser;
 use publish::PublishCommand;
 
 mod bump;
-mod info;
+mod cargo_workspace;
+mod crates_io;
 mod publish;
-mod util;
 
 #[derive(Debug, Parser)]
 #[clap(author, about)]
