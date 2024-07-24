@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
+use async_recursion::async_recursion;
 use cargo_metadata::Package;
 use clap::Args;
 use requestty::{prompt_one, Answer, Question};
@@ -14,7 +15,10 @@ use tokio::{process::Command, task::spawn_blocking};
 use toml_edit::{Item, Value};
 use walkdir::WalkDir;
 
-use crate::{info::fetch_ws_crates, util::can_publish};
+use crate::{
+    info::fetch_ws_crates,
+    util::{can_publish, fetch_published_version},
+};
 
 /// Bump versions of a crate and dependant crates.
 ///
@@ -72,12 +76,6 @@ impl BumpCommand {
     pub async fn run(&self) -> Result<()> {
         let workspace_crates = fetch_ws_crates().await?;
 
-        let crate_names = workspace_crates
-            .iter()
-            .filter(|p| can_publish(p))
-            .map(|p| &*p.name)
-            .collect::<Vec<_>>();
-
         let publishable_crates = workspace_crates
             .iter()
             .filter(|p| p.publish.is_none())
@@ -98,12 +96,13 @@ impl BumpCommand {
                 &crate_to_bump,
                 !self.interactive && self.breaking,
                 !self.interactive && self.with_dependants,
-            )?;
+            )
+            .await?;
 
             let dependants = Arc::new(dependants);
 
             for dep in dependants.keys() {
-                match workspace_crates.iter().find(|p| p.name == &**dep) {
+                match workspace_crates.iter().find(|p| p.name == **dep) {
                     None => bail!("Package {} is not a member of workspace", crate_to_bump),
                     Some(v) => {
                         patch(v.clone(), dependants.clone())
@@ -153,7 +152,7 @@ async fn patch(package: Package, deps_to_bump: Arc<HashMap<String, Version>>) ->
                 let table = deps_section.as_table_mut();
                 if let Some(table) = table {
                     for (dep_to_bump, new_version) in deps_to_bump.iter() {
-                        if table.contains_key(&dep_to_bump) {
+                        if table.contains_key(dep_to_bump) {
                             let prev: &mut toml_edit::Item = &mut table[dep_to_bump];
 
                             let new_version = toml_edit::value(new_version.to_string());
@@ -261,7 +260,8 @@ fn determine_dependants_to_bump(
 }
 
 /// This is recursive and returned value does not contain original crate itself.
-fn public_dependants<'a>(
+#[async_recursion]
+async fn public_dependants<'a>(
     interactive: bool,
     dependants: &'a mut HashMap<String, Version>,
     packages: &'a [Package],
@@ -287,7 +287,7 @@ fn public_dependants<'a>(
     };
 
     for p in packages {
-        if !can_publish(&p) {
+        if !can_publish(p) {
             continue;
         }
 
@@ -296,7 +296,7 @@ fn public_dependants<'a>(
         }
 
         if p.name == crate_to_bump {
-            let previous = published_versions[&p.name].clone();
+            let previous = fetch_published_version(&p.name, true).await?;
             let new_version = calc_bumped_version(previous, breaking)?;
 
             dependants.insert(p.name.clone(), new_version);
@@ -311,12 +311,12 @@ fn public_dependants<'a>(
                     public_dependants(
                         interactive,
                         dependants,
-                        published_versions,
                         packages,
                         &p.name,
                         breaking,
                         with_dependants,
-                    )?;
+                    )
+                    .await?;
                 }
             }
         }
@@ -326,12 +326,12 @@ fn public_dependants<'a>(
         public_dependants(
             interactive,
             dependants,
-            published_versions,
             packages,
             &dep,
             breaking,
             with_dependants,
-        )?;
+        )
+        .await?;
     }
 
     Ok(())

@@ -42,7 +42,7 @@ impl PublishCommand {
 
         let target_crate = &*self.crate_name;
         let allow_only_deps = self.allow_only_deps;
-        let graph = dependency_graph(&ws_packages, &target_crate);
+        let graph = dependency_graph(&ws_packages, target_crate);
 
         if !allow_only_deps {
             let p = ws_packages.iter().find(|p| p.name == target_crate);
