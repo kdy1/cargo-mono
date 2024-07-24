@@ -9,6 +9,7 @@ version = "0.3.8"
 
 [dependencies]
 anyhow = "1.0.40"
+async-recursion = "1.1.1"
 cargo_metadata = "0.13.1"
 clap = { version = "4.5.10", features = ["derive"] }
 futures-util = "0.3.15"
